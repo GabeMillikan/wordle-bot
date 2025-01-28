@@ -3,11 +3,18 @@ from collections import Counter
 from pathlib import Path
 from typing import Iterable
 
-FILE = Path(__file__).parent / "words.txt"
+directory = Path(__file__).parent
 
-with FILE.open() as f:
-    words_list = f.read().splitlines()
-    words = set(words_list)
+with (directory / "solutions.txt").open() as f:
+    solutions_list = sorted(f.read().splitlines())
+    solutions_set = set(solutions_list)
+
+with (directory / "non-solutions.txt").open() as f:
+    non_solutions_list = sorted(f.read().splitlines())
+    non_solutions_set = set(non_solutions_list)
+
+words = solutions_set | non_solutions_set
+words_list = sorted(words)
 
 words_with_letter_at_index: dict[tuple[str, int], set[str]] = {
     (letter, index): set() for letter in string.ascii_uppercase for index in range(5)

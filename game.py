@@ -87,7 +87,7 @@ class Game:
         guesses: Sequence[Guess] = (),
         enforce_word_validity: bool = True,
     ) -> None:
-        self._answer = (answer or random.choice(words.words_list)).upper().strip()
+        self._answer = (answer or random.choice(words.solutions_list)).upper().strip()
         self._answer_letter_counts = Counter(self._answer)
 
         self.enforce_word_validity = enforce_word_validity
