@@ -35,6 +35,12 @@ parser.add_argument(
     action="store_true",
     help="Use a random word instead of fetching the actual Wordle of the day.",
 )
+parser.add_argument(
+    "--solution",
+    type=str,
+    default="",
+    help="Set the solution to a certain word.",
+)
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -45,7 +51,9 @@ if __name__ == "__main__":
         else:
             clear()
 
-    if args.random:
+    if args.solution:
+        answer = args.solution
+    elif args.random:
         answer = None
     else:
         print("Fetching the word of the day...")

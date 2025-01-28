@@ -2,6 +2,7 @@ import random
 import string
 from collections import Counter
 from dataclasses import dataclass
+from dataclasses import replace as dataclass_replace
 from itertools import chain, islice
 from typing import Sequence
 
@@ -58,6 +59,9 @@ class Guess:
 
         return "".join(letters)
 
+    def copy(self) -> "Guess":
+        return dataclass_replace(self)
+
 
 @dataclass
 class LetterBank:
@@ -113,7 +117,7 @@ class Game:
             msg = f"{self._answer!r} is not in the word list."
             raise ValueError(msg)
 
-        self._guesses = []
+        self._guesses: list[Guess] = []
         self._known_exact_letter_counts: dict[str, int] = {}
         self._known_minimum_letter_counts: dict[str, int] = {}
         self._known_positives: set[tuple[str, int]] = set()
@@ -142,7 +146,7 @@ class Game:
 
     @property
     def word_bank(self) -> WordBank:
-        possible = self.possible_answers
+        possible = self.possible_guesses
         solutions = possible & words.solutions_set
         return WordBank(tuple(sorted(solutions)), tuple(sorted(possible - solutions)))
 
@@ -213,8 +217,8 @@ class Game:
         return guess
 
     @property
-    def possible_answers(self) -> set[str]:
-        return words.filter_words(
+    def possible_guesses(self) -> set[str]:
+        return words.filterer.filter(
             self._known_exact_letter_counts,
             self._known_minimum_letter_counts,
             self._known_positives,
@@ -228,46 +232,16 @@ class Game:
     def __str__(self) -> str:
         return "\n".join(map(str, self._guesses))
 
+    def copy(self) -> "Game":
+        game = object.__new__(Game)
 
-if __name__ == "__main__":
-    import os
+        game._answer = self._answer
+        game._answer_letter_counts = self._answer_letter_counts.copy()
+        game.enforce_word_validity = self.enforce_word_validity
+        game._guesses = [g.copy() for g in self._guesses]
+        game._known_exact_letter_counts = self._known_exact_letter_counts.copy()
+        game._known_minimum_letter_counts = self._known_minimum_letter_counts.copy()
+        game._known_positives = self._known_positives.copy()
+        game._known_negatives = self._known_negatives.copy()
 
-    def clear() -> None:
-        os.system("cls" if os.name == "nt" else "clear")  # noqa: S605
-
-    game = Game()
-    clear()
-
-    while True:
-        print("Make a guess and press enter!")
-
-        print("Letter Bank:", game.letter_bank)
-
-        word_bank = game.possible_answers
-        if len(word_bank) > 10:
-            print(
-                "Word Bank:",
-                ", ".join(sorted(word_bank)[:8]),
-                "... plus",
-                len(word_bank) - 8,
-                "more words",
-            )
-        else:
-            print("Word Bank:", ", ".join(word_bank))
-
-        if game.guesses:
-            print(game)
-
-        try:
-            game.make_guess(input())
-        except InvalidGuess as e:
-            clear()
-            print(e)
-            continue
-
-        clear()
-        if game.won:
-            count = len(game.guesses)
-            print(f"You won in {count} guess{'es' if count != 1 else ''}!")
-            print(game)
-            break
+        return game
