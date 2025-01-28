@@ -1,9 +1,7 @@
-import random
-from collections import defaultdict
+import string
+from collections import Counter
 from pathlib import Path
 from typing import Iterable
-
-from constants import *
 
 FILE = Path(__file__).parent / "words.txt"
 
@@ -11,56 +9,62 @@ with FILE.open() as f:
     words_list = f.read().splitlines()
     words = set(words_list)
 
-words_with_letter_at_index: dict[tuple[str, int], set[str]] = defaultdict(set)
+words_with_letter_at_index: dict[tuple[str, int], set[str]] = {
+    (letter, index): set() for letter in string.ascii_uppercase for index in range(5)
+}
 for word in words:
     for index, letter in enumerate(word):
         words_with_letter_at_index[letter, index].add(word)
 
-words_containing_letter: dict[str, set[str]] = defaultdict(set)
+words_without_letter_at_index: dict[tuple[str, int], set[str]] = {
+    (letter, index): words - words_with_letter_at_index[letter, index]
+    for letter in string.ascii_uppercase
+    for index in range(5)
+}
+
+words_containing_exact_letter_count: dict[tuple[str, int], set[str]] = {
+    (letter, index): set() for letter in string.ascii_uppercase for index in range(6)
+}
 for word in words:
-    for letter in word:
-        words_containing_letter[letter].add(word)
+    letter_counts = Counter(word)
+    for letter in string.ascii_uppercase:
+        words_containing_exact_letter_count[letter, letter_counts[letter]].add(word)
+
+words_containing_minimum_letter_count: dict[tuple[str, int], set[str]] = {
+    (letter, minimum): set.union(
+        *(
+            words_containing_exact_letter_count[letter, count]
+            for count in range(minimum, 6)
+        ),
+    )
+    for letter in string.ascii_uppercase
+    for minimum in range(1, 5)
+}
 
 
-def pick_random() -> str:
-    return random.choice(words_list)
-
-
-def find_possible_answers(
-    greens: Iterable[tuple[str, int]],
-    yellows: Iterable[tuple[str, int]],
-    grays: Iterable[str],
+def filter_words(
+    exact_letter_counts: dict[str, int] | None = None,
+    minimum_letter_counts: dict[str, int] | None = None,
+    positives: Iterable[tuple[str, int]] = (),
+    negatives: Iterable[tuple[str, int]] = (),
 ) -> set[str]:
-    green_allow = None
-    if greens:
-        green_allow = set.intersection(*(words_with_letter_at_index[g] for g in greens))
+    if (
+        not exact_letter_counts
+        and not minimum_letter_counts
+        and not positives
+        and not negatives
+    ):
+        return words.copy()
 
-    yellow_allow = None
-    if yellows:
-        yellow_allow = set.intersection(
-            *(
-                words_containing_letter[y[0]] - words_with_letter_at_index[y]
-                for y in yellows
-            ),
-        )
-
-    gray_deny = None
-    if grays:
-        gray_deny = set.union(*(words_containing_letter[g] for g in grays))
-
-    if green_allow and yellow_allow:
-        allow = green_allow
-        allow.intersection_update(yellow_allow)
-        if gray_deny:
-            allow.difference_update(gray_deny)
-    elif green_allow or yellow_allow:
-        allow = green_allow or yellow_allow
-        assert allow
-        if gray_deny:
-            allow.difference_update(gray_deny)
-    elif gray_deny:
-        allow = words.difference(gray_deny)
-    else:
-        allow = words
-
-    return allow
+    return set.intersection(
+        *(
+            words_containing_exact_letter_count[letter, count]
+            for letter, count in (exact_letter_counts or {}).items()
+        ),
+        *(
+            words_containing_minimum_letter_count[letter, count]
+            for letter, count in (minimum_letter_counts or {}).items()
+        ),
+        *(words_with_letter_at_index[positive] for positive in positives),
+        *(words_without_letter_at_index[negative] for negative in negatives),
+    )
