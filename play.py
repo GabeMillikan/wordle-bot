@@ -1,7 +1,8 @@
 import argparse
 import os
 
-from game import Game, InvalidGuess
+import words
+from game import Game, InvalidGuess, fmt_gray
 
 
 def clear() -> None:
@@ -29,11 +30,11 @@ parser.add_argument(
     action="store_true",
     help="Disable checking if guesses are in the word list.",
 )
-# parser.add_argument(
-#     "--random",
-#     action="store_true",
-#     help="Use a random word instead of fetching the actual Wordle of the day.",
-# )
+parser.add_argument(
+    "--random",
+    action="store_true",
+    help="Use a random word instead of fetching the actual Wordle of the day.",
+)
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -44,7 +45,13 @@ if __name__ == "__main__":
         else:
             clear()
 
-    game = Game(enforce_word_validity=not args.allow_invalid_guesses)
+    if args.random:
+        answer = None
+    else:
+        print("Fetching the word of the day...")
+        answer = words.fetch_solution()
+
+    game = Game(answer, enforce_word_validity=not args.allow_invalid_guesses)
     clear_or_newline()
 
     while True:
@@ -54,17 +61,7 @@ if __name__ == "__main__":
             print("Letter Bank:", game.letter_bank)
 
         if args.word_bank:
-            word_bank = game.possible_answers
-            if len(word_bank) > 10:
-                print(
-                    "Word Bank:",
-                    ", ".join(sorted(word_bank)[:8]),
-                    "... plus",
-                    len(word_bank) - 8,
-                    "more words",
-                )
-            else:
-                print("Word Bank:", ", ".join(word_bank))
+            print("Word Bank:", game.word_bank)
 
         if game.guesses:
             print(game)

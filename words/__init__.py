@@ -1,7 +1,15 @@
+import json
 import string
 from collections import Counter
+from datetime import date, datetime
 from pathlib import Path
 from typing import Iterable
+
+import requests
+from tzlocal import get_localzone
+from zoneinfo import ZoneInfo
+
+local_time_zone = get_localzone()
 
 directory = Path(__file__).parent
 
@@ -75,3 +83,27 @@ def filter_words(
         *(words_with_letter_at_index[positive] for positive in positives),
         *(words_without_letter_at_index[negative] for negative in negatives),
     )
+
+
+def fetch_solution(day: date | None = None) -> str:
+    if day is None:
+        day = datetime.now(local_time_zone).date()
+
+    filename = f"{day.isoformat()}.json"
+
+    try:
+        with (directory / filename).open() as f:
+            return json.load(f)["solution"]
+    except Exception:
+        pass
+
+    data = requests.get(f"https://www.nytimes.com/svc/wordle/v2/{filename}").json()
+    solution = data["solution"]
+
+    try:
+        with (directory / filename).open("w") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
+
+    return solution

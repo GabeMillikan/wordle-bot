@@ -2,6 +2,7 @@ import random
 import string
 from collections import Counter
 from dataclasses import dataclass
+from itertools import chain, islice
 from typing import Sequence
 
 import colorama as clr
@@ -79,6 +80,22 @@ class LetterBank:
         return " ".join(formatted_letters)
 
 
+@dataclass
+class WordBank:
+    solutions: tuple[str, ...]
+    non_solutions: tuple[str, ...]
+
+    def __str__(self) -> str:
+        formatted_words = chain(self.solutions, map(fmt_gray, self.non_solutions))
+        total = len(self.solutions) + len(self.non_solutions)
+        if total > 10:
+            return (
+                f"{', '.join(islice(formatted_words, 8))}, ... and {total - 8:,} more"
+            )
+
+        return ", ".join(formatted_words)
+
+
 class Game:
     def __init__(
         self,
@@ -122,6 +139,12 @@ class Game:
         }
 
         return LetterBank(greens, yellows, grays)
+
+    @property
+    def word_bank(self) -> WordBank:
+        possible = self.possible_answers
+        solutions = possible & words.solutions_set
+        return WordBank(tuple(sorted(solutions)), tuple(sorted(possible - solutions)))
 
     @property
     def answer(self) -> str:
