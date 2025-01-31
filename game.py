@@ -34,7 +34,7 @@ class InvalidGuess(Exception):
         return f"{clr.Fore.RED}Invalid guess: {self.reason}{clr.Fore.RESET}"
 
 
-@dataclass
+@dataclass(frozen=True) # please don't mutate these containers
 class Guess:
     word: str
     exact_letter_counts: dict[str, int]
@@ -251,10 +251,13 @@ class Game:
         game._answer = self._answer
         game._answer_letter_counts = self._answer_letter_counts.copy()
         game.enforce_word_validity = self.enforce_word_validity
-        game._guesses = [g.copy() for g in self._guesses]
+        game._guesses = self._guesses.copy()
         game._known_exact_letter_counts = self._known_exact_letter_counts.copy()
         game._known_minimum_letter_counts = self._known_minimum_letter_counts.copy()
         game._known_positives = self._known_positives.copy()
         game._known_negatives = self._known_negatives.copy()
+        game._narrowed_filter = self._narrowed_filter
+        game._possible_guesses = self._possible_guesses
+        game._possible_guesses_outdated = self._possible_guesses_outdated
 
         return game
