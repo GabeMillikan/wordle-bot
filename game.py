@@ -123,6 +123,10 @@ class Game:
         self._known_positives: set[tuple[str, int]] = set()
         self._known_negatives: set[tuple[str, int]] = set()
 
+        self._narrowed_filter: words.Filterer = words.filterer
+        self._possible_guesses: set[tuple[str, int]] = words.words
+        self._possible_guesses_outdated = False
+
         for guess in guesses:
             self._update_from_guess(guess)
 
@@ -174,6 +178,7 @@ class Game:
 
         self._known_positives.update(guess.positives)
         self._known_negatives.update(guess.negatives)
+        self._possible_guesses_outdated = True
 
     def make_guess(self, word: str) -> Guess:
         word = word.upper().strip()
@@ -216,14 +221,22 @@ class Game:
         self._update_from_guess(guess)
         return guess
 
-    @property
-    def possible_guesses(self) -> set[str]:
-        return words.filterer.filter(
+    def _recalculate_possible_guesses(self) -> None:
+        self._possible_guesses = self._narrowed_filter.filter(
             self._known_exact_letter_counts,
             self._known_minimum_letter_counts,
             self._known_positives,
             self._known_negatives,
         )
+        self._narrowed_filter = words.Filterer(self._possible_guesses)
+        self._possible_guesses_outdated = False
+
+    @property
+    def possible_guesses(self) -> set[str]:
+        if self._possible_guesses_outdated:
+            self._recalculate_possible_guesses()
+
+        return self._possible_guesses.copy()
 
     @property
     def won(self) -> bool:
