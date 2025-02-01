@@ -39,12 +39,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Display a list of possible words.",
     )
-    # parser.add_argument(
-    #     "--best-guess",
-    #     type=float,
-    #     default=-1,
-    #     help="How much time to spend calculating the best guess, if anything.",
-    # )
+    parser.add_argument(
+        "--word-suggestion",
+        type=float,
+        default=-1,
+        help="How much time to spend searching for the best word, if any.",
+    )
 
     return parser
 
@@ -57,6 +57,7 @@ def configured_play(
     enforce_guess_validity: bool = True,
     letter_bank: bool = True,
     word_bank: bool = False,
+    word_search_timeout: float = -1,
 ) -> None:
     if clear_screen:
         if os.name == "nt":
@@ -81,6 +82,10 @@ def configured_play(
 
         if word_bank:
             print("Word Bank:", g.word_bank)
+
+        if word_search_timeout > 0:
+            print("Waiting...", end="", flush=True)
+            print("\rSuggestion:", g.get_guess_rankings(word_search_timeout))
 
         if g.guesses:
             print(g)
@@ -112,6 +117,7 @@ def play_from_namespace(ns: argparse.Namespace) -> None:
         enforce_guess_validity=not ns.allow_invalid_guesses,
         letter_bank=not ns.no_letter_bank,
         word_bank=ns.word_bank,
+        word_search_timeout=ns.word_suggestion,
     )
 
 

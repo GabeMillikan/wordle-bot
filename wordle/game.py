@@ -1,10 +1,12 @@
-import operator
+import json
 import random
 import re
 import string
+import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from itertools import chain, islice
+from pathlib import Path
 from typing import ClassVar, Generator, Iterable
 
 import colorama as clr
@@ -12,6 +14,12 @@ import colorama as clr
 from wordle import words
 
 clr.init()
+
+try:
+    with open(Path(__file__).parent / "initial-guess-rankings.json") as f:
+        initial_guess_rankings = json.load(f)
+except Exception:
+    initial_guess_rankings = None
 
 
 def green(x: str) -> str:
@@ -106,6 +114,72 @@ class Guess:
                 letters[index] = gray(letter)
 
         return "".join(letters)
+
+
+@dataclass
+class GuessRanking:
+    timed_out: bool
+    solution_ranks: dict[str, float]
+    non_solution_ranks: dict[str, float]
+    solution: str | None = None
+
+    def __str__(self) -> str:
+        if self.solution:
+            return f"The only possible solution is {green(self.solution)}."
+
+        ordered_solutions = sorted(
+            self.solution_ranks,
+            key=self.solution_ranks.__getitem__,
+        )
+        ordered_non_solutions = sorted(
+            self.non_solution_ranks,
+            key=self.non_solution_ranks.__getitem__,
+        )
+
+        solution_summary = (None, None, None)
+        if ordered_solutions:
+            solution_summary = (
+                (ordered_solutions[i], self.solution_ranks[ordered_solutions[i]])
+                for i in (0, len(ordered_solutions) // 2, -1)
+            )
+
+        non_solution_summary = (None, None, None)
+        if ordered_non_solutions:
+            non_solution_summary = (
+                (
+                    ordered_non_solutions[i],
+                    self.non_solution_ranks[ordered_non_solutions[i]],
+                )
+                for i in (0, len(ordered_non_solutions) // 2, -1)
+            )
+
+        summary_parts = []
+        for name, ss, nss in zip(
+            ("Best", "Median", "Worst"),
+            solution_summary,
+            non_solution_summary,
+        ):
+            part = []
+
+            if ss:
+                word, rank = ss
+                part.append(f"{word} ({rank:.3f})")
+
+            if nss:
+                word, rank = nss
+                part.append(gray(f"{word} ({rank:.3f})"))
+
+            if part:
+                summary_parts.append(f"[{name}] {' '.join(part)}")
+
+        parts = []
+        if self.timed_out:
+            parts.append("<timed out>")
+
+        if summary_parts:
+            parts.append(", ".join(summary_parts))
+
+        return " ".join(parts)
 
 
 class WordFilter:
@@ -262,7 +336,7 @@ class Game:
     def score(self) -> int:
         return len(self._guesses)
 
-    def _evaluate_guess(self, word: str) -> Guess:
+    def _evaluate_guess(self, word: str, *, solution: str | None = None) -> Guess:
         if len(word) != 5:
             raise InvalidGuess("Not a 5-letter word.")
 
@@ -272,10 +346,16 @@ class Game:
             err = f"{word!r} is not a real word."
             raise InvalidGuess(err)
 
+        if solution is not None:
+            solution_letter_counts = Counter(solution)
+        else:
+            solution = self._solution
+            solution_letter_counts = self._solution_letter_counts
+
         exact_letter_counts = {}
         minimum_letter_counts = {}
         for letter, guessed_count in word_letter_counts.items():
-            solution_count = self._solution_letter_counts[letter]
+            solution_count = solution_letter_counts[letter]
             if guessed_count > solution_count:
                 exact_letter_counts[letter] = solution_count
             else:
@@ -284,7 +364,7 @@ class Game:
         positives = set()
         negatives = set()
         for i, letter in enumerate(word):
-            if letter == self._solution[i]:
+            if letter == solution[i]:
                 positives.add((letter, i))
             else:
                 negatives.add((letter, i))
@@ -324,7 +404,7 @@ class Game:
             if letter not in not_yellow
         }
 
-        return LetterBank(greens, grays, yellows)
+        return LetterBank(greens, yellows, grays)
 
     @property
     def _possible_guesses(self) -> set[str]:
@@ -370,6 +450,81 @@ class Game:
             raise ValueError(msg)
 
         return game
+
+    @property
+    def avg_remaining_solutions_by_guess(
+        self,
+    ) -> Generator[tuple[str, float], None, None]:
+        if (
+            self._guessable is words.all_words
+            and not self._guesses
+            and initial_guess_rankings is not None
+        ):
+            yield from initial_guess_rankings.items()
+            return
+
+        solution_filter = WordFilter(self.possible_solutions)
+
+        for guess in self._guessable:
+            total_remaining_solutions = 0
+
+            for solution in solution_filter.words:
+                total_remaining_solutions += len(
+                    solution_filter.filter(
+                        self._evaluate_guess(guess, solution=solution),
+                    ),
+                )
+
+            yield guess, total_remaining_solutions / len(solution_filter.words)
+
+    def get_guess_rankings(self, timeout: float | None = None) -> GuessRanking:
+        started_at = time.perf_counter()
+        ranking = GuessRanking(False, {}, {})
+
+        if len(self.possible_solutions) == 1:
+            ranking.solution = next(iter(self.possible_solutions))
+            return ranking
+
+        for guess, avg_remaining_solutions in self.avg_remaining_solutions_by_guess:
+            if guess in self._solutions:
+                ranking.solution_ranks[guess] = avg_remaining_solutions
+            else:
+                ranking.non_solution_ranks[guess] = avg_remaining_solutions
+
+            if timeout is not None and (time.perf_counter() - started_at) > timeout:
+                ranking.timed_out = True
+                break
+
+            # we've already found the best answer
+            # no reason to continue computing!
+            if (
+                avg_remaining_solutions <= 1
+                and (time.perf_counter() - started_at) > 0.1
+            ):
+                break
+
+        return ranking
+
+    @property
+    def best_guess(self) -> str:
+        ranking = self.get_guess_rankings()
+        if ranking.solution:
+            return ranking.solution
+
+        ranks = ranking.solution_ranks | ranking.non_solution_ranks
+        best_solution = min(ranks, key=ranks.__getitem__)
+        solutions_remaining = ranks[best_solution]
+        solutions_removed = len(self.possible_solutions) - solutions_remaining
+
+        if solutions_removed <= 1:
+            # if the optimal guess at best removes one solution,
+            # then make sure we at least guess a solution (which
+            # would also remove a solution)
+            # We never want to remove just one solution by guessing
+            # a non-solution.
+            return next(iter(self.possible_solutions))
+
+        return best_solution
 
     def __str__(self) -> str:
         rows = [str(g) for g in self._guesses]
