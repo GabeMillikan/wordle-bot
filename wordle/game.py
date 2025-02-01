@@ -75,16 +75,27 @@ class LetterBank:
 
 @dataclass
 class WordBank:
+    size: int
     solutions: set[str]
     non_solutions: set[str]
 
     def __str__(self) -> str:
-        count = len(self.solutions) + len(self.non_solutions)
-        words = chain(sorted(self.solutions), map(gray, sorted(self.non_solutions)))
+        solutions = list(self.solutions)
+        non_solutions = list(self.non_solutions)
+
+        count = len(solutions) + len(non_solutions)
+        if count > self.size:
+            random.shuffle(solutions)
+            random.shuffle(non_solutions)
+        else:
+            solutions.sort()
+            non_solutions.sort()
+
+        words = chain(solutions, map(gray, non_solutions))
         return (
-            f"[{len(self.solutions):,} + {len(self.non_solutions):,} Word{'' if count == 1 else 's'}]"
+            f"[{len(solutions):,} + {len(non_solutions):,} Word{'' if count == 1 else 's'}]"
             " "
-            f"{', '.join(islice(words, 10))}{', ...' if count > 10 else ''}"
+            f"{', '.join(islice(words, self.size))}{', ...' if count > self.size else ''}"
         ).strip()
 
 
@@ -426,9 +437,8 @@ class Game:
     def possible_non_solutions(self) -> set[str]:
         return self._possible_guesses & self._non_solutions
 
-    @property
-    def word_bank(self) -> WordBank:
-        return WordBank(self.possible_solutions, self.possible_non_solutions)
+    def get_word_bank(self, size: int) -> WordBank:
+        return WordBank(size, self.possible_solutions, self.possible_non_solutions)
 
     def with_solution(self, solution: str) -> "Game":
         game = object.__new__(Game)
@@ -502,10 +512,8 @@ class Game:
                 ]
                 for future in as_completed(futures):
                     yield from future.result().items()
-            except Exception:
-                print("<shutting down...>")
-                e.shutdown(cancel_futures=True)
-                raise
+            finally:
+                e.shutdown(wait=False, cancel_futures=True)
 
     def get_guess_rankings(self, timeout: float | None = None) -> GuessRanking:
         started_at = time.perf_counter()

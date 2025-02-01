@@ -36,8 +36,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--word-bank",
-        action="store_true",
-        help="Display a list of possible words.",
+        type=int,
+        default=-1,
+        help="How many possible words to display, if any.",
     )
     parser.add_argument(
         "--word-suggestion",
@@ -56,7 +57,7 @@ def configured_play(
     clear_screen: bool = True,
     enforce_guess_validity: bool = True,
     letter_bank: bool = True,
-    word_bank: bool = False,
+    word_bank_size: int = -1,
     word_search_timeout: float = -1,
 ) -> None:
     if clear_screen:
@@ -80,8 +81,8 @@ def configured_play(
         if letter_bank:
             print("Letter Bank:", g.letter_bank)
 
-        if word_bank:
-            print("Word Bank:", g.word_bank)
+        if word_bank_size > 0:
+            print("Word Bank:", g.get_word_bank(word_bank_size))
 
         if word_search_timeout > 0:
             print("Waiting...", end="", flush=True)
@@ -116,7 +117,7 @@ def play_from_namespace(ns: argparse.Namespace) -> None:
         clear_screen=not ns.no_clear,
         enforce_guess_validity=not ns.allow_invalid_guesses,
         letter_bank=not ns.no_letter_bank,
-        word_bank=ns.word_bank,
+        word_bank_size=ns.word_bank,
         word_search_timeout=ns.word_suggestion,
     )
 
