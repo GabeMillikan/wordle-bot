@@ -109,6 +109,7 @@ class Guess:
 
 
 class WordFilter:
+    DEFAULT: ClassVar["WordFilter"]
     WORD_RE: ClassVar = re.compile(r"[A-Z]{5}")
 
     def __init__(self, words: set[str]) -> None:
@@ -191,7 +192,7 @@ class WordFilter:
         return WordFilter(self.filter(guess))
 
 
-SCORE_CACHE: dict[frozenset[str], float] = {}
+WordFilter.DEFAULT = WordFilter(words.all_words)
 
 
 class Game:
@@ -203,26 +204,33 @@ class Game:
         solutions: Iterable[str] | None = None,
         non_solutions: Iterable[str] | None = None,
     ) -> None:
-        self._solutions = (
-            {s.strip().upper() for s in solutions}
-            if solutions is not None
-            else words.solutions
-        )
-        self._non_solutions = (
-            {s.strip().upper() for s in non_solutions}
-            if non_solutions is not None
-            else words.non_solutions
-        )
-        self._guessable = self._solutions | self._non_solutions
+        if solutions is None and non_solutions is None:
+            self._solutions = words.solutions
+            self._non_solutions = words.non_solutions
+            self._guessable = words.all_words
+            self._word_filter = WordFilter.DEFAULT
+        else:
+            self._solutions = (
+                {s.strip().upper() for s in solutions}
+                if solutions is not None
+                else words.solutions
+            )
+            self._non_solutions = (
+                {s.strip().upper() for s in non_solutions}
+                if non_solutions is not None
+                else words.non_solutions
+            )
+            self._guessable = self._solutions | self._non_solutions
+            self._word_filter = WordFilter(self._guessable)
 
-        if self._solutions & self._non_solutions:
-            msg = f"Words cannot be both solutions and non-solutions. These words do not comply: {self._solutions & self._non_solutions!r}"
-            raise ValueError(msg)
-
-        for word in chain(self._solutions, self._non_solutions):
-            if not WordFilter.WORD_RE.match(word):
-                msg = f"A provided word, {word!r}, is invalid (must match /{WordFilter.WORD_RE.pattern}/)."
+            if self._solutions & self._non_solutions:
+                msg = f"Words cannot be both solutions and non-solutions. These words do not comply: {self._solutions & self._non_solutions!r}"
                 raise ValueError(msg)
+
+            for word in chain(self._solutions, self._non_solutions):
+                if not WordFilter.WORD_RE.match(word):
+                    msg = f"A provided word, {word!r}, is invalid (must match /{WordFilter.WORD_RE.pattern}/)."
+                    raise ValueError(msg)
 
         self._solution = (
             solution if solution is not None else random.choice(tuple(self._solutions))
@@ -237,7 +245,6 @@ class Game:
         self._solution_letter_counts = Counter(self._solution)
         self._guesses: list[Guess] = []
         self._guess_set: set[str] = set()
-        self._word_filter = WordFilter(self._guessable)
 
     @property
     def guesses(self) -> tuple[Guess, ...]:
