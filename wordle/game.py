@@ -13,16 +13,20 @@ from wordle import words
 clr.init()
 
 
-def green(let: str) -> str:
-    return f"{clr.Fore.GREEN}{let}{clr.Fore.RESET}"
+def green(x: str) -> str:
+    return f"{clr.Fore.GREEN}{x}{clr.Fore.RESET}"
 
 
-def yellow(let: str) -> str:
-    return f"{clr.Fore.YELLOW}{let}{clr.Fore.RESET}"
+def yellow(x: str) -> str:
+    return f"{clr.Fore.YELLOW}{x}{clr.Fore.RESET}"
 
 
-def gray(let: str) -> str:
-    return f"{clr.Style.DIM}{let}{clr.Style.RESET_ALL}"
+def red(x: str) -> str:
+    return f"{clr.Fore.RED}{x}{clr.Fore.RESET}"
+
+
+def gray(x: str) -> str:
+    return f"{clr.Style.DIM}{x}{clr.Style.RESET_ALL}"
 
 
 class InvalidGuess(Exception):
@@ -34,7 +38,7 @@ class InvalidGuess(Exception):
         return f"InvalidGuess({self.reason!r})"
 
     def __str__(self) -> str:
-        return f"{clr.Fore.RED}Invalid guess: {self.reason}{clr.Fore.RESET}"
+        return red(f"Invalid guess: {self.reason}")
 
 
 @dataclass
@@ -234,7 +238,17 @@ class Game:
 
     @property
     def won(self) -> bool:
-        return any(g.word == self._solution for g in self._guesses)
+        return any(g.word == self._solution for g in reversed(self._guesses))
+
+    @property
+    def lost(self) -> bool:
+        return self.score > 6 or (
+            self.score == 6 and self._guesses[-1].word != self._solution
+        )
+
+    @property
+    def score(self) -> int:
+        return len(self._guesses)
 
     def _evaluate_guess(self, word: str) -> Guess:
         if len(word) != 5:
@@ -300,16 +314,28 @@ class Game:
         return LetterBank(greens, grays, yellows)
 
     @property
+    def _possible_guesses(self) -> set[str]:
+        return self._word_filter.words
+
+    @property
+    def possible_guesses(self) -> set[str]:
+        return self._possible_guesses.copy()
+
+    @property
     def possible_solutions(self) -> set[str]:
-        return self._word_filter.words & self._solutions
+        return self._possible_guesses & self._solutions
 
     @property
     def possible_non_solutions(self) -> set[str]:
-        return self._word_filter.words & self._non_solutions
+        return self._possible_guesses & self._non_solutions
 
     @property
     def word_bank(self) -> WordBank:
         return WordBank(self.possible_solutions, self.possible_non_solutions)
 
     def __str__(self) -> str:
-        return "\n".join(map(str, self._guesses))
+        rows = [str(g) for g in self._guesses]
+        if self.lost:
+            rows.append(red(self._solution))
+
+        return "\n".join(rows)

@@ -94,8 +94,12 @@ def configured_play(
 
         separate_game_screens()
         if g.won:
-            count = len(g.guesses)
-            print(f"You won in {count} guess{'es' if count != 1 else ''}!")
+            print(f"You won with a score of {g.score}/6, nice!")
+            print(g)
+            break
+
+        if g.lost:
+            print("You failed :(")
             print(g)
             break
 
