@@ -187,7 +187,7 @@ class WordFilter:
 class Game:
     def __init__(
         self,
-        answer: str | None = None,
+        solution: str | None = None,
         *,
         enforce_guess_validity: bool = True,
         solutions: Iterable[str] | None = None,
@@ -214,17 +214,17 @@ class Game:
                 msg = f"A provided word, {word!r}, is invalid (must match /{WordFilter.WORD_RE.pattern}/)."
                 raise ValueError(msg)
 
-        self._answer = (
-            answer if answer is not None else random.choice(tuple(self._solutions))
+        self._solution = (
+            solution if solution is not None else random.choice(tuple(self._solutions))
         )
 
-        if self._answer not in self._solutions:
-            msg = f"{self._answer!r} is not a solution."
+        if self._solution not in self._solutions:
+            msg = f"{self._solution!r} is not a solution."
             raise ValueError(msg)
 
         self.enforce_guess_validity = enforce_guess_validity
 
-        self._answer_letter_counts = Counter(self._answer)
+        self._solution_letter_counts = Counter(self._solution)
         self._guesses: list[Guess] = []
         self._word_filter = WordFilter(self._guessable)
 
@@ -234,7 +234,7 @@ class Game:
 
     @property
     def won(self) -> bool:
-        return any(g.word == self._answer for g in self._guesses)
+        return any(g.word == self._solution for g in self._guesses)
 
     def _evaluate_guess(self, word: str) -> Guess:
         if len(word) != 5:
@@ -249,16 +249,16 @@ class Game:
         exact_letter_counts = {}
         minimum_letter_counts = {}
         for letter, guessed_count in word_letter_counts.items():
-            answer_count = self._answer_letter_counts[letter]
-            if guessed_count > answer_count:
-                exact_letter_counts[letter] = answer_count
+            solution_count = self._solution_letter_counts[letter]
+            if guessed_count > solution_count:
+                exact_letter_counts[letter] = solution_count
             else:
                 minimum_letter_counts[letter] = guessed_count
 
         positives = set()
         negatives = set()
         for i, letter in enumerate(word):
-            if letter == self._answer[i]:
+            if letter == self._solution[i]:
                 positives.add((letter, i))
             else:
                 negatives.add((letter, i))

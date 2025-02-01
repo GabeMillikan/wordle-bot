@@ -50,7 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def configured_play(
-    answer: str | None = None,
+    solution: str | None = None,
     *,
     random: bool = False,
     clear_screen: bool = True,
@@ -66,11 +66,11 @@ def configured_play(
     else:
         separate_game_screens = print
 
-    if answer is None and not random:
+    if solution is None and not random:
         print("Fetching the word of the day...")
-        answer = words.fetch_nyt_solution()
+        solution = words.fetch_nyt_solution()
 
-    g = game.Game(answer, enforce_guess_validity=enforce_guess_validity)
+    g = game.Game(solution, enforce_guess_validity=enforce_guess_validity)
     separate_game_screens()
 
     while True:
@@ -102,7 +102,7 @@ def configured_play(
 
 def play_from_namespace(ns: argparse.Namespace) -> None:
     return configured_play(
-        answer=ns.answer.upper().strip() if ns.answer.strip() else None,
+        solution=ns.answer.upper().strip() if ns.answer.strip() else None,
         random=ns.random,
         clear_screen=not ns.no_clear,
         enforce_guess_validity=not ns.allow_invalid_guesses,
