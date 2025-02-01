@@ -12,7 +12,7 @@ else:
 
 
 def simulate_game(solution: str) -> list[str]:
-    g = game.Game(solution)
+    g = game.Game(solution, multiprocessing_disabled=True)
     while not g.won and not g.lost:
         g.make_guess(g.best_guess)
     return [guess.word for guess in g.guesses]
@@ -36,7 +36,7 @@ if __name__ == "__main__":
                 solution = futures.pop(future)
                 guesses = future.result()
 
-                g = game.Game(solution)
+                g = game.Game(solution, multiprocessing_disabled=True)
                 for guess in guesses:
                     g.make_guess(guess)
 

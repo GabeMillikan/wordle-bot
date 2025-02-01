@@ -1,9 +1,11 @@
 import json
+import os
 import random
 import re
 import string
 import time
 from collections import Counter, defaultdict
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from itertools import chain, islice
 from pathlib import Path
@@ -80,7 +82,7 @@ class WordBank:
         count = len(self.solutions) + len(self.non_solutions)
         words = chain(sorted(self.solutions), map(gray, sorted(self.non_solutions)))
         return (
-            f"[{count} Word{'' if count == 1 else 's'}]"
+            f"[{len(self.solutions):,} + {len(self.non_solutions):,} Word{'' if count == 1 else 's'}]"
             " "
             f"{', '.join(islice(words, 10))}{', ...' if count > 10 else ''}"
         ).strip()
@@ -277,6 +279,7 @@ class Game:
         enforce_guess_validity: bool = True,
         solutions: Iterable[str] | None = None,
         non_solutions: Iterable[str] | None = None,
+        multiprocessing_disabled: bool = False,
     ) -> None:
         if solutions is None and non_solutions is None:
             self._solutions = words.solutions
@@ -315,6 +318,7 @@ class Game:
             raise ValueError(msg)
 
         self.enforce_guess_validity = enforce_guess_validity
+        self.multiprocessing_disabled = multiprocessing_disabled
 
         self._solution_letter_counts = Counter(self._solution)
         self._guesses: list[Guess] = []
@@ -436,6 +440,7 @@ class Game:
 
         # these are immutable
         game.enforce_guess_validity = self.enforce_guess_validity
+        game.multiprocessing_disabled = self.multiprocessing_disabled
         game._word_filter = self._word_filter
 
         # container of immutable data
@@ -451,6 +456,27 @@ class Game:
 
         return game
 
+    def _mp_avg_solution_by_guess(
+        self,
+        test_guesses: Iterable[str],
+    ) -> dict[str, float]:
+        solution_filter = WordFilter(self.possible_solutions)
+
+        data = {}
+        for guess in test_guesses:
+            total_remaining_solutions = 0
+
+            for solution in solution_filter.words:
+                total_remaining_solutions += len(
+                    solution_filter.filter(
+                        self._evaluate_guess(guess, solution=solution),
+                    ),
+                )
+
+            data[guess] = total_remaining_solutions / len(solution_filter.words)
+
+        return data
+
     @property
     def avg_remaining_solutions_by_guess(
         self,
@@ -463,44 +489,41 @@ class Game:
             yield from initial_guess_rankings.items()
             return
 
-        solution_filter = WordFilter(self.possible_solutions)
+        if self.multiprocessing_disabled:
+            yield from self._mp_avg_solution_by_guess(self._guessable).items()
 
-        for guess in self._guessable:
-            total_remaining_solutions = 0
-
-            for solution in solution_filter.words:
-                total_remaining_solutions += len(
-                    solution_filter.filter(
-                        self._evaluate_guess(guess, solution=solution),
-                    ),
-                )
-
-            yield guess, total_remaining_solutions / len(solution_filter.words)
+        processes = (os.cpu_count() or 4) - 1
+        with ProcessPoolExecutor(processes) as e:
+            try:
+                args = list(self._guessable)
+                futures = [
+                    e.submit(self._mp_avg_solution_by_guess, args[i :: processes * 4])
+                    for i in range(processes * 4)
+                ]
+                for future in as_completed(futures):
+                    yield from future.result().items()
+            except Exception:
+                print("<shutting down...>")
+                e.shutdown(cancel_futures=True)
+                raise
 
     def get_guess_rankings(self, timeout: float | None = None) -> GuessRanking:
         started_at = time.perf_counter()
         ranking = GuessRanking(False, {}, {})
 
-        if len(self.possible_solutions) == 1:
-            ranking.solution = next(iter(self.possible_solutions))
+        possible_solutions = self.possible_solutions
+        if len(possible_solutions) == 1:
+            ranking.solution = next(iter(possible_solutions))
             return ranking
 
         for guess, avg_remaining_solutions in self.avg_remaining_solutions_by_guess:
-            if guess in self._solutions:
+            if guess in possible_solutions:
                 ranking.solution_ranks[guess] = avg_remaining_solutions
             else:
                 ranking.non_solution_ranks[guess] = avg_remaining_solutions
 
             if timeout is not None and (time.perf_counter() - started_at) > timeout:
                 ranking.timed_out = True
-                break
-
-            # we've already found the best answer
-            # no reason to continue computing!
-            if (
-                avg_remaining_solutions <= 1
-                and (time.perf_counter() - started_at) > 0.1
-            ):
                 break
 
         return ranking
