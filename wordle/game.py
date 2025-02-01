@@ -1,10 +1,11 @@
+import operator
 import random
 import re
 import string
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from itertools import chain, islice
-from typing import ClassVar, Iterable
+from typing import ClassVar, Generator, Iterable
 
 import colorama as clr
 
@@ -77,7 +78,7 @@ class WordBank:
         ).strip()
 
 
-@dataclass
+@dataclass(frozen=True)
 class Guess:
     _word: str
     _exact_letter_counts: dict[str, int]
@@ -111,6 +112,7 @@ class WordFilter:
     WORD_RE: ClassVar = re.compile(r"[A-Z]{5}")
 
     def __init__(self, words: set[str]) -> None:
+        self.frozen_words = frozenset(words)
         self.words = words
 
         self.words_with_letter_at_index: defaultdict[tuple[str, int], set[str]] = (
@@ -139,7 +141,7 @@ class WordFilter:
                         word,
                     )
 
-    def filter(
+    def _filter(
         self,
         exact_letter_counts: dict[str, int] | None = None,
         minimum_letter_counts: dict[str, int] | None = None,
@@ -152,7 +154,7 @@ class WordFilter:
             and not positives
             and not negatives
         ):
-            return self.words.copy()
+            return self.words
 
         return set.intersection(
             *(
@@ -177,15 +179,19 @@ class WordFilter:
             ),
         )
 
-    def narrow(self, guess: Guess) -> "WordFilter":
-        return WordFilter(
-            self.filter(
-                guess._exact_letter_counts,
-                guess._minimum_letter_counts,
-                guess._positives,
-                guess._negatives,
-            ),
+    def filter(self, guess: Guess) -> set[str]:
+        return self._filter(
+            guess._exact_letter_counts,
+            guess._minimum_letter_counts,
+            guess._positives,
+            guess._negatives,
         )
+
+    def narrow(self, guess: Guess) -> "WordFilter":
+        return WordFilter(self.filter(guess))
+
+
+SCORE_CACHE: dict[frozenset[str], float] = {}
 
 
 class Game:
@@ -230,6 +236,7 @@ class Game:
 
         self._solution_letter_counts = Counter(self._solution)
         self._guesses: list[Guess] = []
+        self._guess_set: set[str] = set()
         self._word_filter = WordFilter(self._guessable)
 
     @property
@@ -238,13 +245,11 @@ class Game:
 
     @property
     def won(self) -> bool:
-        return any(g.word == self._solution for g in reversed(self._guesses))
+        return self._solution in self._guess_set
 
     @property
     def lost(self) -> bool:
-        return self.score > 6 or (
-            self.score == 6 and self._guesses[-1].word != self._solution
-        )
+        return self.score >= 6 and not self.won
 
     @property
     def score(self) -> int:
@@ -287,6 +292,7 @@ class Game:
 
     def _perform_guess(self, guess: Guess) -> None:
         self._guesses.append(guess)
+        self._guess_set.add(guess.word)
         self._word_filter = self._word_filter.narrow(guess)
 
     def make_guess(self, word: str) -> Guess:
@@ -306,8 +312,8 @@ class Game:
         not_yellow = greens | grays
         yellows = {
             letter
-            for g in self._guesses
-            for letter in g.word
+            for word in self._guess_set
+            for letter in word
             if letter not in not_yellow
         }
 
@@ -332,6 +338,31 @@ class Game:
     @property
     def word_bank(self) -> WordBank:
         return WordBank(self.possible_solutions, self.possible_non_solutions)
+
+    def with_solution(self, solution: str) -> "Game":
+        game = object.__new__(Game)
+
+        # these are never mutated
+        game._solutions = self._solutions
+        game._non_solutions = self._non_solutions
+        game._guessable = self._guessable
+
+        # these are immutable
+        game.enforce_guess_validity = self.enforce_guess_validity
+        game._word_filter = self._word_filter
+
+        # container of immutable data
+        game._guesses = self._guesses.copy()
+        game._guess_set = self._guess_set.copy()
+
+        # update solution
+        game._solution = solution
+        game._solution_letter_counts = Counter(solution)
+        if solution not in game._solutions:
+            msg = f"{solution!r} is not a solution."
+            raise ValueError(msg)
+
+        return game
 
     def __str__(self) -> str:
         rows = [str(g) for g in self._guesses]
