@@ -41,6 +41,12 @@ parser.add_argument(
     default="",
     help="Set the solution to a certain word.",
 )
+parser.add_argument(
+    "--best-guess",
+    type=float,
+    default=-1,
+    help="How much time to spend calculating the best guess, if anything.",
+)
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -70,6 +76,9 @@ if __name__ == "__main__":
 
         if args.word_bank:
             print("Word Bank:", game.word_bank)
+
+        if args.best_guess > 0:
+            print("Guess Ranking:", game.rank_guesses(args.best_guess))
 
         if game.guesses:
             print(game)

@@ -1,5 +1,6 @@
 import random
 import string
+import time
 from collections import Counter
 from dataclasses import dataclass
 from dataclasses import replace as dataclass_replace
@@ -34,7 +35,7 @@ class InvalidGuess(Exception):
         return f"{clr.Fore.RED}Invalid guess: {self.reason}{clr.Fore.RESET}"
 
 
-@dataclass(frozen=True) # please don't mutate these containers
+@dataclass(frozen=True)  # please don't mutate the containers
 class Guess:
     word: str
     exact_letter_counts: dict[str, int]
@@ -98,6 +99,61 @@ class WordBank:
             )
 
         return ", ".join(formatted_words)
+
+
+@dataclass
+class GuessRanking:
+    timed_out: bool
+    ranks: dict[str, float]
+
+    def __str__(self) -> str:
+        solution_set = self.ranks.keys() & words.solutions_set
+        non_solution_set = self.ranks.keys() - words.solutions_set
+
+        ordered_solutions = sorted(solution_set, key=self.ranks.__getitem__)
+        ordered_non_solutions = sorted(non_solution_set, key=self.ranks.__getitem__)
+
+        solution_summary = (None, None, None)
+        if ordered_solutions:
+            solution_summary = (
+                (ordered_solutions[i], self.ranks[ordered_solutions[i]])
+                for i in (0, len(ordered_solutions) // 2, -1)
+            )
+
+        non_solution_summary = (None, None, None)
+        if ordered_non_solutions:
+            non_solution_summary = (
+                (ordered_non_solutions[i], self.ranks[ordered_non_solutions[i]])
+                for i in (0, len(ordered_non_solutions) // 2, -1)
+            )
+
+        summary_parts = []
+        for name, ss, nss in zip(
+            ("Best", "Median", "Worst"),
+            solution_summary,
+            non_solution_summary,
+        ):
+            part = []
+
+            if ss:
+                word, rank = ss
+                part.append(f"{word} ({rank:.1f})")
+
+            if nss:
+                word, rank = nss
+                part.append(fmt_gray(f"{word} ({rank:.1f})"))
+
+            if part:
+                summary_parts.append(f"[{name}] {' '.join(part)}")
+
+        parts = []
+        if self.timed_out:
+            parts.append("<timed out>")
+
+        if summary_parts:
+            parts.append(", ".join(summary_parts))
+
+        return " ".join(parts)
 
 
 class Game:
@@ -239,11 +295,50 @@ class Game:
         return self._possible_guesses.copy()
 
     @property
+    def possible_solutions(self) -> set[str]:
+        return self.possible_guesses & words.solutions_set
+
+    @property
     def won(self) -> bool:
         return self._guesses[-1].word == self._answer
 
+    def rank_guesses(self, timeout: float | None = None) -> GuessRanking:
+        """
+        Tests every possible guess, and returns the average
+        amount of solutions remaining after that guess.
+        """
+        started_at = time.perf_counter()
+        average_solutions_remaining = {}
+
+        for guess in self.possible_guesses:
+            total_solutions_remaining = 0
+
+            for solution in self.possible_solutions:
+                if timeout is not None and (time.perf_counter() - started_at) > timeout:
+                    return GuessRanking(True, average_solutions_remaining)
+
+                g = self.with_answer(solution)
+                g.make_guess(guess)
+                total_solutions_remaining += len(g.possible_solutions)
+
+            average_solutions_remaining[guess] = total_solutions_remaining / len(
+                self.possible_solutions
+            )
+
+        return GuessRanking(False, average_solutions_remaining)
+
     def __str__(self) -> str:
         return "\n".join(map(str, self._guesses))
+
+    def with_answer(self, answer: str) -> "Game":
+        g = self.copy()
+
+        g._answer = answer.upper().strip()
+        if g.enforce_word_validity and g._answer not in words.solutions_set:
+            err = f"{answer!r} is not a real word."
+            raise InvalidGuess(err)
+
+        return g
 
     def copy(self) -> "Game":
         game = object.__new__(Game)
@@ -261,3 +356,12 @@ class Game:
         game._possible_guesses_outdated = self._possible_guesses_outdated
 
         return game
+
+
+if __name__ == "__main__":
+    g = Game("toast")
+    g.make_guess("raise")
+
+    g = g.with_answer("toast")
+    g.make_guess("stash")
+    print(g.possible_guesses)
